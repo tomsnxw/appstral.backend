@@ -41,7 +41,10 @@ def get_planet_position(jd, planet_code, lang="es"):
     degree_in_sign = longitude % 30
     degree, minutes = decimal_to_degrees_minutes(degree_in_sign)
     signo = signos[sign]
-    return signo, degree, minutes, longitude, speed  
+    retrograde = speed < 0
+    estacionario = abs(speed) < 0.001  # Umbral para considerar estacionamiento
+    return signo, degree, minutes, longitude, speed, retrograde, estacionario
+
 
 def obtener_signo(longitud):
     signos = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo", 
@@ -311,7 +314,6 @@ def revolucion_solar():
         "fecha_repeticion": solar_return_iso  # Fecha y hora de la repetición solar
     })
 
-
 @app.route('/astros_hoy', methods=['GET'])
 def calcular_astros():
     fecha_param = request.args.get('fecha', default=None)
@@ -369,20 +371,36 @@ def calcular_astros():
     planet_names = planet_names_es if lang == 'es' else planet_names_en
 
     planet_positions = {}
+    previous_positions = {}
 
     for planet, swe_code in planet_names.items():
-        signo, degree, minutes, longitude, speed = get_planet_position(jd, swe_code, lang)
+        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+
+        if planet in previous_positions:
+            prev_speed = previous_positions[planet]['speed']
+            if abs(speed) < 0.001: 
+                estacionario = True
+            else:
+                estacionario = False
+
+            if prev_speed > 0 and speed < 0:
+                estacionario = True 
+
         planet_positions[planet] = {
             "signo": signo,
             "grado": degree,
             "minutos": minutes,
             "longitud": longitude,
-            "retrógrado": speed < 0
+            "retrógrado": speed < 0,
+            "estacionario": estacionario
         }
+
+        previous_positions[planet] = {'speed': speed}
 
     return jsonify({
         "planetas": planet_positions,
     })
+    
 @app.route('/mi_carta', methods=['GET'])
 def  mi_carta():
     fecha_param = request.args.get('fecha', default=None)
