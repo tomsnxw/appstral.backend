@@ -42,7 +42,7 @@ def get_planet_position(jd, planet_code, lang="es"):
     degree, minutes = decimal_to_degrees_minutes(degree_in_sign)
     signo = signos[sign]
     retrograde = speed < 0
-    estacionario = abs(speed) < 0.001  # Umbral para considerar estacionamiento
+    estacionario = abs(speed) < 0.001
     return signo, degree, minutes, longitude, speed, retrograde, estacionario
 
 
