@@ -272,7 +272,7 @@ def revolucion_solar():
     house_positions = get_houses(jd, lat, lon, house_system)
 
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
@@ -280,7 +280,9 @@ def revolucion_solar():
             "grado": degree,
             "minutos": minutes,
             "casa": house,
-            "retrógrado": speed < 0
+            "longitud": longitude,
+            "retrógrado": speed < 0,
+            "estacionario": estacionario
         }
 
     # Obtener las posiciones de las casas
@@ -313,6 +315,7 @@ def revolucion_solar():
         "distancia_ascendente_casa6": distancia_ascendente_casa6,
         "fecha_repeticion": solar_return_iso  # Fecha y hora de la repetición solar
     })
+
 
 @app.route('/astros_hoy', methods=['GET'])
 def calcular_astros():
@@ -401,6 +404,7 @@ def calcular_astros():
         "planetas": planet_positions,
     })
     
+
 @app.route('/mi_carta', methods=['GET'])
 def  mi_carta():
     fecha_param = request.args.get('fecha', default=None)
@@ -517,7 +521,7 @@ def  mi_carta():
    
 
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
@@ -558,6 +562,7 @@ def  mi_carta():
         "distancia_ascendente_casa6": distancia_ascendente_casa6
         
     })
+
 
 
 @app.route('/calcular_carta', methods=['POST'])
@@ -729,6 +734,7 @@ def calcular_carta():
         
     })
 
+
 @app.route('/ver_carta', methods=['GET'])
 def  ver_carta():
     fecha_param = request.args.get('fecha', default=None)
@@ -826,9 +832,22 @@ def  ver_carta():
 
     house_system = sistemas_casas.get(sistema_casas, b'T')  
 
-    for planet, swe_code in planet_names.items():
-        result, err = swe.calc(jd, swe_code)
+    planet_positions = {}
+    previous_positions = {}
     
+    for planet, swe_code in planet_names.items():
+            signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+
+            if planet in previous_positions:
+                prev_speed = previous_positions[planet]['speed']
+                if abs(speed) < 0.001: 
+                    estacionario = True
+                else:
+                    estacionario = False
+
+                if prev_speed > 0 and speed < 0:
+                    estacionario = True 
+            result, err = swe.calc(jd, swe_code)
     if err != 0:
         print(f"Error al calcular la posición del planeta: {err}")
     else:
@@ -840,7 +859,7 @@ def  ver_carta():
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
@@ -848,7 +867,9 @@ def  ver_carta():
             "grado": degree,
             "minutos": minutes,
             "casa": house,
-            "retrógrado": speed < 0
+            "longitud": longitude,
+            "retrógrado": speed < 0,
+            "estacionario": estacionario
         }
 
     ascendente_longitude = house_positions[0][4]
