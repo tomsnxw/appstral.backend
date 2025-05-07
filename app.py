@@ -119,7 +119,7 @@ def get_sun_position(date_str, time_str, tz_name):
         "minute": minutes
     }
 
-def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-7):
+def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-3):
     """ Afina la búsqueda de la posición exacta del planeta. """
     while (jd_high - jd_low) > tolerance:
         jd_mid = (jd_low + jd_high) / 2.0
@@ -150,7 +150,7 @@ def find_sun_repeat(sun_data, year):
     jd_start = swe.julday(year, base_date.month, base_date.day) - 15
     jd_end = swe.julday(year, base_date.month, base_date.day) + 15
 
-    step = 0.0001  
+    step = 0.01  
     tolerance = 1e-3  
 
     jd = jd_start
