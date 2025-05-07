@@ -119,7 +119,7 @@ def get_sun_position(date_str, time_str, tz_name):
         "minute": minutes
     }
 
-def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-6):
+def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-7):
     """ Afina la búsqueda de la posición exacta del planeta. """
     while (jd_high - jd_low) > tolerance:
         jd_mid = (jd_low + jd_high) / 2.0
