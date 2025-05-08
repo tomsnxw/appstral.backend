@@ -573,7 +573,7 @@ def mi_carta():
         "distancia_ascendente_casa5": distancia_ascendente_casa5,
         "distancia_ascendente_casa6": distancia_ascendente_casa6
         
-    }
+    })
 
 @app.route('/calcular_carta', methods=['POST'])
 def calcular_carta():
