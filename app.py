@@ -575,6 +575,7 @@ def mi_carta():
         
     })
 
+
 @app.route('/calcular_carta', methods=['POST'])
 def calcular_carta():
     data = request.json
