@@ -23,8 +23,11 @@ def home():
 
 def decimal_to_degrees_minutes(decimal_degree):
     degrees = int(decimal_degree)
-    minutes = int((decimal_degree - degrees) * 60) 
-    return degrees, minutes
+    remaining_decimal = (decimal_degree - degrees) * 60
+    minutes = int(remaining_decimal)
+    seconds = round((remaining_decimal - minutes) * 60)
+    return degrees, minutes, seconds
+
 
 signos_es = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo", 
              "Libra", "Escorpio", "Sagitario", "Capricornio", "Acuario", "Piscis"]
@@ -47,12 +50,10 @@ def get_planet_position(jd, planet_code, lang="es"):
 
 
 def obtener_signo(longitud):
-    signos = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo", 
-              "Libra", "Escorpio", "Sagitario", "Capricornio", "Acuario", "Piscis"]
-    signo_numero = int(longitud // 30) 
-    grado = longitud % 30  
-    minutos = (grado - int(grado)) * 60  
-    return signos[signo_numero], int(grado), round(minutos)
+    signo_numero = int(longitud // 30)
+    grado_decimal = longitud % 30
+    grados, minutos, segundos = decimal_to_degrees_minutes(grado_decimal)
+    return signos_es[signo_numero], grados, minutos, segundos
 
 def get_houses(jd, latitude, longitude, house_system, lang="es"):
     signos = signos_es if lang == "es" else signos_en
@@ -62,13 +63,13 @@ def get_houses(jd, latitude, longitude, house_system, lang="es"):
     for i, house in enumerate(houses):
         sign = int(house / 30)
         degree_in_sign = house % 30
-        degree, minutes = decimal_to_degrees_minutes(degree_in_sign)
+        degree, minutes, seconds = decimal_to_degrees_minutes(degree_in_sign)
         signo = signos[sign]
-        house_positions.append((i + 1, signo, degree, minutes, house))
+        house_positions.append((i + 1, signo, degree, minutes,seconds, house))
     return house_positions
 
 def determine_house(longitude, house_positions):
-    for i, (_, _, _, _, house_longitude) in enumerate(house_positions):
+    for i, (_, _, _, _, _, house_longitude) in enumerate(house_positions):
         next_house_longitude = house_positions[(i + 1) % 12][4]
         current_start = house_longitude % 360
         next_start = next_house_longitude % 360
@@ -85,41 +86,31 @@ def get_timezone(latitude, longitude):
     tf = TimezoneFinder()
     timezone_str = tf.timezone_at(lng=longitude, lat=latitude)
     return pytz.timezone(timezone_str)
-
-
-def get_sun_position(date_str, time_str, tz_name):
-    """ Calcula la posición exacta del Sol en una fecha y hora específicas. """
-    local_tz = pytz.timezone(tz_name)
     
+def get_sun_position(date_str, time_str, tz_name):
+    """Calcula la posición exacta del Sol en grado, minuto y segundo."""
+    local_tz = pytz.timezone(tz_name)
     dt_local = local_tz.localize(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M"))
     dt_utc = dt_local.astimezone(pytz.utc)
-    
-    # Calcular el Julian Day en UTC de la misma forma que el primer código
-    jd = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour + dt_utc.minute / 60.0)
+    jd = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0)
 
     result, _ = swe.calc(jd, swe.SUN)
-    longitude = result[0]  
+    longitude = result[0]
 
-    zodiac_signs = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo",
-                    "Libra", "Escorpio", "Sagitario", "Capricornio", "Acuario", "Piscis"]
-    sign_index = int(longitude / 30)
-    sign = zodiac_signs[sign_index]
-    
-    degrees_in_sign = longitude % 30
-    degrees = int(degrees_in_sign)
-    minutes = int((degrees_in_sign % 1) * 60)  # Eliminamos decimales en minutos
+    signo, grados, minutos, segundos = obtener_signo(longitude)
 
     return {
         "date": date_str,
         "time": time_str,
         "timezone": tz_name,
         "longitude": round(longitude, 6),
-        "sign": sign,
-        "degree": degrees,
-        "minute": minutes
+        "sign": signo,
+        "degree": grados,
+        "minute": minutos,
+        "second": segundos
     }
 
-def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-3):
+def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-7):
     """ Afina la búsqueda de la posición exacta del planeta. """
     while (jd_high - jd_low) > tolerance:
         jd_mid = (jd_low + jd_high) / 2.0
@@ -133,49 +124,58 @@ def refine_position(planet_id, jd_low, jd_high, target_degree, tolerance=1e-3):
     return jd_high
 
 def find_sun_repeat(sun_data, year):
-    """Busca la repetición exacta del grado y minuto del Sol en un año específico 
-       y retorna la fecha y hora en formato ISO 8601 (UTC)."""
+    """Busca la repetición más precisa de la posición exacta del Sol."""
     target_sign = sun_data["sign"]
     target_degree = sun_data["degree"]
     target_minute = sun_data["minute"]
+    target_second = sun_data["second"]
 
-    zodiac_signs = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo",
-                    "Libra", "Escorpio", "Sagitario", "Capricornio", "Acuario", "Piscis"]
-    
+    zodiac_signs = signos_es  # Usamos el array ya definido en tu código
+
     sign_index = zodiac_signs.index(target_sign)
-    target_degree_ecliptic = (sign_index * 30) + target_degree + (target_minute / 60)
+    target_degree_ecliptic = (
+        sign_index * 30
+        + target_degree
+        + target_minute / 60
+        + target_second / 3600
+    )
 
     base_date = datetime.strptime(sun_data["date"], "%Y-%m-%d")
-    # Establecer el rango de búsqueda de ±15 días
-    jd_start = swe.julday(year, base_date.month, base_date.day) - 15
-    jd_end = swe.julday(year, base_date.month, base_date.day) + 15
+    jd_start = swe.julday(year, base_date.month, base_date.day) - 3
+    jd_end = swe.julday(year, base_date.month, base_date.day) + 3
 
-    step = 0.01  
-    tolerance = 1e-3  
+    step = 0.0001  # Más preciso
+    tolerance = 1e-8
+
+    best_diff = float("inf")
+    best_jd = None
 
     jd = jd_start
-    last_jd = jd
-
     while jd <= jd_end:
-        jd += step
         result, _ = swe.calc(jd, swe.SUN)
         sun_degree = result[0]
+        diff = abs(sun_degree - target_degree_ecliptic)
 
-        if sun_degree >= target_degree_ecliptic:
-            jd_exact = refine_position(swe.SUN, last_jd, jd, target_degree_ecliptic, tolerance)
-            year_found, month, day, ut_decimal = swe.revjul(jd_exact)
-            hour = int(ut_decimal)
-            minute = int((ut_decimal - hour) * 60)
-            second = int((((ut_decimal - hour) * 60) - minute) * 60)
-            
-            # Crear un objeto datetime en UTC
-            dt_return = datetime(year_found, month, day, hour, minute, second, tzinfo=pytz.utc)
-            # Retornar el string en formato ISO 8601
-            return dt_return.isoformat()
-        
-        last_jd = jd
+        if diff < best_diff:
+            best_diff = diff
+            best_jd = jd
 
-    return None  # O bien, retornar un valor o mensaje de error específico
+            if best_diff < tolerance:
+                break
+
+        jd += step
+
+    if best_jd:
+        year_found, month, day, ut_decimal = swe.revjul(best_jd)
+        hour = int(ut_decimal)
+        minute = int((ut_decimal - hour) * 60)
+        second = int((((ut_decimal - hour) * 60) - minute) * 60)
+        microsecond = int(((((ut_decimal - hour) * 60) - minute) * 60 - second) * 1_000_000)
+
+        dt_return = datetime(year_found, month, day, hour, minute, second, microsecond, tzinfo=pytz.utc)
+        return dt_return.isoformat()
+
+    return None
 
 @app.route('/revolucion_solar', methods=['GET'])
 def revolucion_solar():
@@ -272,13 +272,14 @@ def revolucion_solar():
     house_positions = get_houses(jd, lat, lon, house_system)
 
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes,seconds, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
             "signo": signo,
             "grado": degree,
             "minutos": minutes,
+            "segundos": seconds,
             "casa": house,
             "longitud": longitude,
             "retrógrado": speed < 0,
@@ -286,12 +287,12 @@ def revolucion_solar():
         }
 
     # Obtener las posiciones de las casas
-    ascendente_longitude = house_positions[0][4]
-    casa_2_longitude = house_positions[1][4]
-    casa_3_longitude = house_positions[2][4]
-    casa_4_longitude = house_positions[3][4]
-    casa_5_longitude = house_positions[4][4]
-    casa_6_longitude = house_positions[5][4]
+    ascendente_longitude = house_positions[0][5]
+    casa_2_longitude = house_positions[1][5]
+    casa_3_longitude = house_positions[2][5]
+    casa_4_longitude = house_positions[3][5]
+    casa_5_longitude = house_positions[4][5]
+    casa_6_longitude = house_positions[5][5]
 
     distancia_ascendente_casa2 = ((casa_2_longitude - ascendente_longitude) % 360)
     distancia_ascendente_casa3 = ((casa_3_longitude - ascendente_longitude) % 360)
@@ -300,8 +301,8 @@ def revolucion_solar():
     distancia_ascendente_casa6 = ((casa_6_longitude - ascendente_longitude) % 360)
     
     houses = {}
-    for house_num, signo, degree, minutes, house_longitude in house_positions:
-        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes}
+    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions: # Incluimos segundos
+        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds} # Incluimos segundos
 
     # Respuesta final con la carta astral y la fecha y hora de la repetición solar
     return jsonify({
@@ -377,7 +378,7 @@ def calcular_astros():
     previous_positions = {}
 
     for planet, swe_code in planet_names.items():
-        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+        signo, degree, minutes, longitude, speed, seconds, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
 
         if planet in previous_positions:
             prev_speed = previous_positions[planet]['speed']
@@ -403,15 +404,16 @@ def calcular_astros():
     return jsonify({
         "planetas": planet_positions,
     })
-    
 
-@app.route('/mi_carta', methods=['GET'])
-def  mi_carta():
-    fecha_param = request.args.get('fecha', default=None)
-    lat = request.args.get('lat', type=float, default=None) 
-    lang = request.args.get('lang', default='es')
-    lon = request.args.get('lon', type=float, default=None)
-    sistema_casas = request.args.get('sistema_casas', 'T') 
+@app.route('/mi_carta', methods=['POST'])
+def mi_carta():
+    data = request.json
+
+    fecha_param = data.get('fecha')
+    lat = data.get('lat')
+    lon = data.get('lon')
+    lang = data.get('lang', 'es')
+    sistema_casas = data.get('sistema_casas', 'T')
 
     if not lat or not lon:
         return jsonify({"error": "Se requiere latitud y longitud."}), 400
@@ -425,7 +427,6 @@ def  mi_carta():
         user_datetime = datetime.now()
 
     timezone = get_timezone(lat, lon)
-
     user_datetime_utc = timezone.localize(user_datetime).astimezone(pytz.utc)
 
     jd = swe.julday(user_datetime_utc.year, user_datetime_utc.month, user_datetime_utc.day,
@@ -433,7 +434,6 @@ def  mi_carta():
     
     luna_pos = swe.calc_ut(jd, swe.MOON)[0][0]
     sol_pos = swe.calc_ut(jd, swe.SUN)[0][0]
-
 
     fase_lunar_grados = (luna_pos - sol_pos) % 360
 
@@ -455,8 +455,6 @@ def  mi_carta():
         fase_lunar = "Luna Menguante"
     else:
         fase_lunar = "Luna Nueva"
-
-    signos = signos_es if lang == "es" else signos_en
 
     planet_names_es = {
         "Sol": swe.SUN,
@@ -493,35 +491,47 @@ def  mi_carta():
     planet_names = planet_names_es if lang == 'es' else planet_names_en
 
     sistemas_casas = {
-        "P": b'P',  # Placidus
-        "K": b'K',  # Koch
-        "P": b'P',  # Porfirio
-        "R": b'R',  # Regiomontanus
-        "C": b'C',  # Campanus
-        "E": b'E',  # Equatorial
-        "W": b'W',  # Whole sign
-        "T": b'T'   # Polich-Page
+        "P": b'P', 
+        "K": b'K', 
+        "P": b'P', 
+        "R": b'R', 
+        "C": b'C', 
+        "E": b'E',
+        "W": b'W', 
+        "T": b'T'  
     }
 
     house_system = sistemas_casas.get(sistema_casas, b'T')  
 
+    planet_positions = {}
+    previous_positions = {}
+    
     for planet, swe_code in planet_names.items():
-        result, err = swe.calc(jd, swe_code)
+            signo, degree, minutes,seconds, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+
+            if planet in previous_positions:
+                prev_speed = previous_positions[planet]['speed']
+                if abs(speed) < 0.001: 
+                    estacionario = True
+                else:
+                    estacionario = False
+
+                if prev_speed > 0 and speed < 0:
+                    estacionario = True 
+            result, err = swe.calc(jd, swe_code)
     
     if err != 0:
         print(f"Error al calcular la posición del planeta: {err}")
     else:
-        signo, degree, minutes, longitude = get_planet_position(jd, swe_code)
+        signo, degree, minutes, longitude, seconds = get_planet_position(jd, swe_code)
         print(f"{planet}: {signo} {degree}° {minutes}'")
         
 
     planet_positions = {}
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
-   
-
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes,seconds, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
@@ -529,16 +539,18 @@ def  mi_carta():
             "grado": degree,
             "minutos": minutes,
             "casa": house,
-            "retrógrado": speed < 0
+            "longitud": longitude,
+            "segundos": seconds,
+            "retrógrado": speed < 0,
+            "estacionario": estacionario
         }
 
-
-    ascendente_longitude = house_positions[0][4]
-    casa_2_longitude = house_positions[1][4]
-    casa_3_longitude = house_positions[2][4]
-    casa_4_longitude = house_positions[3][4]
-    casa_5_longitude = house_positions[4][4]
-    casa_6_longitude = house_positions[5][4]
+    ascendente_longitude = house_positions[0][5]
+    casa_2_longitude = house_positions[1][5]
+    casa_3_longitude = house_positions[2][5]
+    casa_4_longitude = house_positions[3][5]
+    casa_5_longitude = house_positions[4][5]
+    casa_6_longitude = house_positions[5][5]
 
     distancia_ascendente_casa2 = ((casa_2_longitude - ascendente_longitude) % 360)
     distancia_ascendente_casa3 = ((casa_3_longitude - ascendente_longitude) % 360)
@@ -547,8 +559,8 @@ def  mi_carta():
     distancia_ascendente_casa6 = ((casa_6_longitude - ascendente_longitude) % 360)
     
     houses = {}
-    for house_num, signo, degree, minutes, house_longitude in house_positions:
-        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes}
+    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions: # Incluimos segundos
+        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds} # Incluimos segundos
 
     return jsonify({
         "fase_lunar": fase_lunar,
@@ -561,9 +573,7 @@ def  mi_carta():
         "distancia_ascendente_casa5": distancia_ascendente_casa5,
         "distancia_ascendente_casa6": distancia_ascendente_casa6
         
-    })
-
-
+    }
 
 @app.route('/calcular_carta', methods=['POST'])
 def calcular_carta():
@@ -667,7 +677,7 @@ def calcular_carta():
     previous_positions = {}
     
     for planet, swe_code in planet_names.items():
-            signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+            signo, degree, minutes,seconds, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
 
             if planet in previous_positions:
                 prev_speed = previous_positions[planet]['speed']
@@ -683,7 +693,7 @@ def calcular_carta():
     if err != 0:
         print(f"Error al calcular la posición del planeta: {err}")
     else:
-        signo, degree, minutes, longitude = get_planet_position(jd, swe_code)
+        signo, degree, minutes, longitude, seconds = get_planet_position(jd, swe_code)
         print(f"{planet}: {signo} {degree}° {minutes}'")
         
 
@@ -691,7 +701,7 @@ def calcular_carta():
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes,seconds, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
@@ -700,16 +710,17 @@ def calcular_carta():
             "minutos": minutes,
             "casa": house,
             "longitud": longitude,
+            "segundos": seconds,
             "retrógrado": speed < 0,
             "estacionario": estacionario
         }
 
-    ascendente_longitude = house_positions[0][4]
-    casa_2_longitude = house_positions[1][4]
-    casa_3_longitude = house_positions[2][4]
-    casa_4_longitude = house_positions[3][4]
-    casa_5_longitude = house_positions[4][4]
-    casa_6_longitude = house_positions[5][4]
+    ascendente_longitude = house_positions[0][5]
+    casa_2_longitude = house_positions[1][5]
+    casa_3_longitude = house_positions[2][5]
+    casa_4_longitude = house_positions[3][5]
+    casa_5_longitude = house_positions[4][5]
+    casa_6_longitude = house_positions[5][5]
 
     distancia_ascendente_casa2 = ((casa_2_longitude - ascendente_longitude) % 360)
     distancia_ascendente_casa3 = ((casa_3_longitude - ascendente_longitude) % 360)
@@ -718,8 +729,8 @@ def calcular_carta():
     distancia_ascendente_casa6 = ((casa_6_longitude - ascendente_longitude) % 360)
     
     houses = {}
-    for house_num, signo, degree, minutes, house_longitude in house_positions:
-        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes}
+    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions: # Incluimos segundos
+        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds} # Incluimos segundos
 
     return jsonify({
         "fase_lunar": fase_lunar,
@@ -733,7 +744,6 @@ def calcular_carta():
         "distancia_ascendente_casa6": distancia_ascendente_casa6
         
     })
-
 
 @app.route('/ver_carta', methods=['GET'])
 def  ver_carta():
