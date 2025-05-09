@@ -34,7 +34,6 @@ signos_es = ["Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo",
 
 signos_en = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", 
              "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
-
 def obtener_signo(longitud):
     """Obtiene el signo, grado, minuto y segundo de una longitud eclíptica."""
     signo_numero = int(longitud // 30)
@@ -184,7 +183,7 @@ def find_sun_repeat(sun_data, year):
 @app.route('/revolucion_solar', methods=['GET'])
 def revolucion_solar():
     # Obtener parámetros
-    fecha_param = request.args.get('fecha_param', default=None)
+    fecha_param = request.args.get('fecha', default=None)
     lat = request.args.get('lat', type=float, default=None) 
     lon = request.args.get('lon', type=float, default=None)
     lang = request.args.get('lang', default='es')
@@ -321,7 +320,6 @@ def revolucion_solar():
         "fecha_repeticion": solar_return_iso  # Fecha y hora de la repetición solar
     })
 
-
 @app.route('/astros_hoy', methods=['GET'])
 def calcular_astros():
     fecha_param = request.args.get('fecha', default=None)
@@ -382,7 +380,7 @@ def calcular_astros():
     previous_positions = {}
 
     for planet, swe_code in planet_names.items():
-        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+        signo, degree, minutes, longitude, speed, seconds, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
 
         if planet in previous_positions:
             prev_speed = previous_positions[planet]['speed']
@@ -410,15 +408,13 @@ def calcular_astros():
     })
     
 
-@app.route('/mi_carta', methods=['POST'])
-def mi_carta():
-    data = request.json
-
-    fecha_param = data.get('fecha')
-    lat = data.get('lat')
-    lon = data.get('lon')
-    lang = data.get('lang', 'es')
-    sistema_casas = data.get('sistema_casas', 'T')
+@app.route('/mi_carta', methods=['GET'])
+def  mi_carta():
+    fecha_param = request.args.get('fecha', default=None)
+    lat = request.args.get('lat', type=float, default=None) 
+    lang = request.args.get('lang', default='es')
+    lon = request.args.get('lon', type=float, default=None)
+    sistema_casas = request.args.get('sistema_casas', 'T') 
 
     if not lat or not lon:
         return jsonify({"error": "Se requiere latitud y longitud."}), 400
@@ -432,6 +428,7 @@ def mi_carta():
         user_datetime = datetime.now()
 
     timezone = get_timezone(lat, lon)
+
     user_datetime_utc = timezone.localize(user_datetime).astimezone(pytz.utc)
 
     jd = swe.julday(user_datetime_utc.year, user_datetime_utc.month, user_datetime_utc.day,
@@ -439,6 +436,7 @@ def mi_carta():
     
     luna_pos = swe.calc_ut(jd, swe.MOON)[0][0]
     sol_pos = swe.calc_ut(jd, swe.SUN)[0][0]
+
 
     fase_lunar_grados = (luna_pos - sol_pos) % 360
 
@@ -460,6 +458,8 @@ def mi_carta():
         fase_lunar = "Luna Menguante"
     else:
         fase_lunar = "Luna Nueva"
+
+    signos = signos_es if lang == "es" else signos_en
 
     planet_names_es = {
         "Sol": swe.SUN,
@@ -496,59 +496,46 @@ def mi_carta():
     planet_names = planet_names_es if lang == 'es' else planet_names_en
 
     sistemas_casas = {
-        "P": b'P', 
-        "K": b'K', 
-        "P": b'P', 
-        "R": b'R', 
-        "C": b'C', 
-        "E": b'E',
-        "W": b'W', 
-        "T": b'T'  
+        "P": b'P',  # Placidus
+        "K": b'K',  # Koch
+        "P": b'P',  # Porfirio
+        "R": b'R',  # Regiomontanus
+        "C": b'C',  # Campanus
+        "E": b'E',  # Equatorial
+        "W": b'W',  # Whole sign
+        "T": b'T'   # Polich-Page
     }
 
     house_system = sistemas_casas.get(sistema_casas, b'T')  
 
-    planet_positions = {}
-    previous_positions = {}
-    
     for planet, swe_code in planet_names.items():
-            signo, degree, minutes,seconds, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
-
-            if planet in previous_positions:
-                prev_speed = previous_positions[planet]['speed']
-                if abs(speed) < 0.001: 
-                    estacionario = True
-                else:
-                    estacionario = False
-
-                if prev_speed > 0 and speed < 0:
-                    estacionario = True 
-            result, err = swe.calc(jd, swe_code)
+        result, err = swe.calc(jd, swe_code)
     
     if err != 0:
         print(f"Error al calcular la posición del planeta: {err}")
     else:
-        signo, degree, minutes, longitude, seconds = get_planet_position(jd, swe_code)
+        signo, degree, minutes, seconds, longitude, = get_planet_position(jd, swe_code)
         print(f"{planet}: {signo} {degree}° {minutes}'")
         
 
     planet_positions = {}
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
+   
+
     for planet, code in planet_names.items():
-        signo, degree, minutes,seconds, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed, seconds, retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
             "signo": signo,
             "grado": degree,
             "minutos": minutes,
-            "casa": house,
-            "longitud": longitude,
             "segundos": seconds,
-            "retrógrado": speed < 0,
-            "estacionario": estacionario
+            "casa": house,
+            "retrógrado": speed < 0
         }
+
 
     ascendente_longitude = house_positions[0][5]
     casa_2_longitude = house_positions[1][5]
@@ -579,6 +566,8 @@ def mi_carta():
         "distancia_ascendente_casa6": distancia_ascendente_casa6
         
     })
+
+
 
 @app.route('/calcular_carta', methods=['POST'])
 def calcular_carta():
@@ -682,7 +671,7 @@ def calcular_carta():
     previous_positions = {}
     
     for planet, swe_code in planet_names.items():
-            signo, degree, minutes,seconds, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
+            signo, degree, minutes, seconds, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
 
             if planet in previous_positions:
                 prev_speed = previous_positions[planet]['speed']
@@ -706,16 +695,16 @@ def calcular_carta():
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
     for planet, code in planet_names.items():
-        signo, degree, minutes,seconds, longitude, speed,retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed, seconds, retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
             "signo": signo,
             "grado": degree,
             "minutos": minutes,
+            "segundos": seconds,
             "casa": house,
             "longitud": longitude,
-            "segundos": seconds,
             "retrógrado": speed < 0,
             "estacionario": estacionario
         }
@@ -734,8 +723,8 @@ def calcular_carta():
     distancia_ascendente_casa6 = ((casa_6_longitude - ascendente_longitude) % 360)
     
     houses = {}
-    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions: # Incluimos segundos
-        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds} # Incluimos segundos
+    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions:
+        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds}
 
     return jsonify({
         "fase_lunar": fase_lunar,
@@ -755,9 +744,9 @@ def calcular_carta():
 def  ver_carta():
     fecha_param = request.args.get('fecha', default=None)
     lat = request.args.get('lat', type=float, default=None) 
+    lang = request.args.get('lang', default='es')
     lon = request.args.get('lon', type=float, default=None)
     sistema_casas = request.args.get('sistema_casas', 'T') 
-    lang = request.args.get('lang', default='es')
 
     if not lat or not lon:
         return jsonify({"error": "Se requiere latitud y longitud."}), 400
@@ -780,6 +769,7 @@ def  ver_carta():
     luna_pos = swe.calc_ut(jd, swe.MOON)[0][0]
     sol_pos = swe.calc_ut(jd, swe.SUN)[0][0]
 
+
     fase_lunar_grados = (luna_pos - sol_pos) % 360
 
     if 0 <= fase_lunar_grados < 45:
@@ -800,6 +790,8 @@ def  ver_carta():
         fase_lunar = "Luna Menguante"
     else:
         fase_lunar = "Luna Nueva"
+
+    signos = signos_es if lang == "es" else signos_en
 
     planet_names_es = {
         "Sol": swe.SUN,
@@ -836,64 +828,53 @@ def  ver_carta():
     planet_names = planet_names_es if lang == 'es' else planet_names_en
 
     sistemas_casas = {
-        "P": b'P', 
-        "K": b'K', 
-        "P": b'P', 
-        "R": b'R', 
-        "C": b'C', 
-        "E": b'E',
-        "W": b'W', 
-        "T": b'T'  
+        "P": b'P',  # Placidus
+        "K": b'K',  # Koch
+        "P": b'P',  # Porfirio
+        "R": b'R',  # Regiomontanus
+        "C": b'C',  # Campanus
+        "E": b'E',  # Equatorial
+        "W": b'W',  # Whole sign
+        "T": b'T'   # Polich-Page
     }
 
     house_system = sistemas_casas.get(sistema_casas, b'T')  
 
-    planet_positions = {}
-    previous_positions = {}
-    
     for planet, swe_code in planet_names.items():
-            signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, swe_code, lang)
-
-            if planet in previous_positions:
-                prev_speed = previous_positions[planet]['speed']
-                if abs(speed) < 0.001: 
-                    estacionario = True
-                else:
-                    estacionario = False
-
-                if prev_speed > 0 and speed < 0:
-                    estacionario = True 
-            result, err = swe.calc(jd, swe_code)
+        result, err = swe.calc(jd, swe_code)
+    
     if err != 0:
         print(f"Error al calcular la posición del planeta: {err}")
     else:
-        signo, degree, minutes, longitude = get_planet_position(jd, swe_code)
+        signo, degree, minutes, seconds, longitude, = get_planet_position(jd, swe_code)
         print(f"{planet}: {signo} {degree}° {minutes}'")
         
 
     planet_positions = {}
     house_positions = get_houses(jd, lat, lon, house_system, lang)
 
+   
+
     for planet, code in planet_names.items():
-        signo, degree, minutes, longitude, speed, retrograde, estacionario = get_planet_position(jd, code, lang)
+        signo, degree, minutes, longitude, speed, seconds, retrograde, estacionario = get_planet_position(jd, code, lang)
         house = determine_house(longitude, house_positions)
 
         planet_positions[planet] = {
             "signo": signo,
             "grado": degree,
             "minutos": minutes,
+            "segundos": seconds,
             "casa": house,
-            "longitud": longitude,
-            "retrógrado": speed < 0,
-            "estacionario": estacionario
+            "retrógrado": speed < 0
         }
 
-    ascendente_longitude = house_positions[0][4]
-    casa_2_longitude = house_positions[1][4]
-    casa_3_longitude = house_positions[2][4]
-    casa_4_longitude = house_positions[3][4]
-    casa_5_longitude = house_positions[4][4]
-    casa_6_longitude = house_positions[5][4]
+
+    ascendente_longitude = house_positions[0][5]
+    casa_2_longitude = house_positions[1][5]
+    casa_3_longitude = house_positions[2][5]
+    casa_4_longitude = house_positions[3][5]
+    casa_5_longitude = house_positions[4][5]
+    casa_6_longitude = house_positions[5][5]
 
     distancia_ascendente_casa2 = ((casa_2_longitude - ascendente_longitude) % 360)
     distancia_ascendente_casa3 = ((casa_3_longitude - ascendente_longitude) % 360)
@@ -902,8 +883,8 @@ def  ver_carta():
     distancia_ascendente_casa6 = ((casa_6_longitude - ascendente_longitude) % 360)
     
     houses = {}
-    for house_num, signo, degree, minutes, house_longitude in house_positions:
-        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes}
+    for house_num, signo, degree, minutes, seconds, house_longitude in house_positions: # Incluimos segundos
+        houses[house_num] = {"signo": signo, "grado": degree, "minutos": minutes, "segundos": seconds} # Incluimos segundos
 
     return jsonify({
         "fase_lunar": fase_lunar,
