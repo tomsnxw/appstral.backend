@@ -183,10 +183,10 @@ def find_sun_repeat(sun_data, year):
 def revolucion_solar():
     # Obtener parámetros
     fecha_param = request.args.get('fecha', default=None)
-    lat = request.args.get('lat', type=float, default=None) 
+    lat = request.args.get('lat', type=float, default=None)
     lon = request.args.get('lon', type=float, default=None)
     lang = request.args.get('lang', default='es')
-    sistema_casas = request.args.get('sistema_casas', 'T') 
+    sistema_casas = request.args.get('sistema_casas', 'T')
     year_param = request.args.get('year_param', type=int, default=None)
 
     # Validaciones básicas
@@ -245,20 +245,20 @@ def revolucion_solar():
     planet_names = planet_names_es if lang == 'es' else planet_names_en
     # Sistema de casas
     sistemas_casas = {
-        "P": b'P', 
-        "K": b'K', 
-        "R": b'R', 
-        "C": b'C', 
+        "P": b'P',
+        "K": b'K',
+        "R": b'R',
+        "C": b'C',
         "E": b'E',
         "W": b'W',
-        "T": b'T' 
+        "T": b'T'
     }
     house_system = sistemas_casas.get(sistema_casas, b'T')
 
     # Obtener la fecha de la revolución solar si se proporciona el año
     if year_param:
-        user_tz = get_timezone(lat, lon)
-        sun_data = get_sun_position(fecha_param.split("T")[0], fecha_param.split("T")[1], user_tz.zone)
+        # Use the determined timezone.zone instead of hardcoding
+        sun_data = get_sun_position(fecha_param.split("T")[0], fecha_param.split("T")[1], timezone.zone)
         solar_return_iso = find_sun_repeat(sun_data, year_param)
         if not solar_return_iso:
             return jsonify({"error": "No se encontró el momento en el rango establecido."}), 400
@@ -285,7 +285,6 @@ def revolucion_solar():
             "casa": house,
             "retrógrado": speed < 0,
             "longitud": longitude,
-            "retrógrado": speed < 0,
             "estacionario": estacionario
         }
 
@@ -315,11 +314,8 @@ def revolucion_solar():
         "distancia_ascendente_casa4": distancia_ascendente_casa4,
         "distancia_ascendente_casa5": distancia_ascendente_casa5,
         "distancia_ascendente_casa6": distancia_ascendente_casa6,
-        "fecha_repeticion": solar_return_iso  # Fecha y hora de la repetición solar
+        "fecha_repeticion": solar_return_iso
     })
-
-
-
 
 @app.route('/calcular_carta', methods=['POST'])
 def calcular_carta():
